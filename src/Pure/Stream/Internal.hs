@@ -1,11 +1,23 @@
 {-# language RankNTypes #-}
-module Pure.Stream.Internal (Stream(), unfolds, folds, step) where
+module Pure.Stream.Internal (Stream(), unfolds, folds, step, cons, nil, suspended) where
 
 import Data.Foldable
 import Data.Traversable
 import Data.Function (fix)
 
 data Stream f a = End | Suspend (f (Stream f a)) | Segment a (Stream f a)
+
+{-# INLINE suspended #-}
+suspended :: Functor f => f (Stream f a) -> Stream f a
+suspended stream = builds $ \e c s -> c (fmap (folds e c s) stream)
+
+{-# INLINE cons #-}
+cons :: Functor f => a -> Stream f a -> Stream f a
+cons a stream = builds $ \e c s -> s a (folds e c s stream)
+
+{-# INLINE nil #-}
+nil :: Stream f a
+nil = builds $ \e c s -> e
 
 instance Functor f => Functor (Stream f) where
   {-# INLINE fmap #-}

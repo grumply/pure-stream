@@ -1,11 +1,11 @@
-{-# language ImplicitParams, ConstraintKinds, RankNTypes #-}
-module Pure.Stream (Step,step,stream,folds,unfolds,Stream()) where
+{-# language ImplicitParams, ConstraintKinds, RankNTypes, OverloadedStrings #-}
+module Pure.Stream (Step,step,stream,folds,unfolds,cons,nil,suspended,Stream()) where
 
 import Pure.Stream.Internal as Stream hiding (step)
 import qualified Pure.Stream.Internal as Stream
 
 import Pure.Elm hiding (Step,step)
-import qualified Pure.Visibility as V
+import qualified Pure.Intersection as I
 
 import Data.Typeable
 import qualified Data.List as List
@@ -39,8 +39,8 @@ stream = \s i f -> run (App [] [] [] (Model s) update view) (Env i f)
             (\a g s -> let (s',vs) = f s a in vs : g s') 
             s i
           )
-        , V.Visibility def
-          <| V.Once False
-          .  V.FireOnMount True
-          .  V.OnOnScreen (Just $ const (command Step))
+        , I.Observer def
+          <| I.RootMargin "100px"
+           . I.Threshold [0]
+           . I.Action (\_ -> command Step)
         ]
