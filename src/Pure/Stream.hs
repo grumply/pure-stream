@@ -10,6 +10,7 @@ import Pure.Data.View (Pure(..))
 import Pure.Elm hiding (Step,step,features,children)
 import Pure.Data.Default
 import Pure.Data.Prop.TH
+import qualified Pure.Intersection as I
 
 import Data.Typeable
 import qualified Data.List as List
@@ -27,7 +28,7 @@ data Msg = Startup | Step
 data Streamer state a = Streamer_
   { producer :: Stream IO a
   , features :: Features
-  , children :: [View]
+  , observer :: I.Observer
   , initial  :: state
   , consumer :: state -> a -> (state,[View])
   }
@@ -54,11 +55,11 @@ stream s = run (App [Startup] [] [] (Model undef nil) update view) (Env s)
     view _ (Model Streamer_ {..} s) = 
       -- Any case in which this shouldn't be a block-level component?
       Div <| SetFeatures features |> 
-        ( (Div <||> List.concat
+        [ (Div <||> List.concat
             ( Stream.folds (\_ -> []) (\_ _ -> []) 
               (\a g s -> let (s',vs) = consumer s a in vs : g s') 
               s initial
             )
           )
-        : children
-        )
+        , View observer
+        ]

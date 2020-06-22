@@ -20,6 +20,7 @@ library
                        Pure.Stream.Internal
   build-depends:       base,
                        pure-core,
+                       pure-intersection,
                        pure-default,
                        pure-elm,
                        pure-prop
