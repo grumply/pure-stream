@@ -19,6 +19,7 @@ library
   exposed-modules:     Pure.Stream
                        Pure.Stream.Internal
   build-depends:       base,
+                       pure-core,
                        pure-default,
                        pure-elm,
                        pure-prop

@@ -6,6 +6,7 @@ module Pure.Stream (module Pure.Stream, module Stream) where
 import Pure.Stream.Internal as Stream hiding (step)
 import qualified Pure.Stream.Internal as Stream
 
+import Pure.Data.View (Pure(..))
 import Pure.Elm hiding (Step,step,features,children)
 import Pure.Data.Default
 import Pure.Data.Prop.TH
@@ -40,7 +41,7 @@ deriveLocalComponent ''Streamer
 stream :: (Typeable state, Typeable a) => (Step => Streamer state a) -> View
 stream s = run (App [Startup] [] [] (Model undef nil) update view) (Env s)
   where
-    undef = Streamer_ undefined undefined undefined undefined undefined
+    undef = Streamer_ nil def def (error "undefined state") (\st _ -> (st,[]))
 
     update Startup (Env streamer) (Model _ _) = 
       let ?step = command Step
