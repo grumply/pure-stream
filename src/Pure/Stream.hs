@@ -1,7 +1,7 @@
 {-# language ImplicitParams, ConstraintKinds, RankNTypes, OverloadedStrings, 
       TemplateHaskell, RecordWildCards, ViewPatterns, PatternSynonyms,
       MultiParamTypeClasses, TypeFamilies, FlexibleContexts #-}
-module Pure.Stream (module Pure.Stream, module Stream) where
+module Pure.Stream (module Pure.Stream, Stream(), folds, unfolds, more, done, realized) where
 
 import Pure.Stream.Internal as Stream hiding (step)
 import qualified Pure.Stream.Internal as Stream
@@ -12,6 +12,7 @@ import Pure.Data.Default
 import Pure.Data.Prop.TH
 import qualified Pure.Intersection as I
 
+import Control.Monad
 import Data.Typeable
 import qualified Data.List as List
 
@@ -20,46 +21,42 @@ type Step = (?step :: IO ())
 step :: Step => IO ()
 step = ?step
 
-data Env state a = Env (Step => Streamer state a)
-data Model state a = Model (Streamer state a) (Stream IO a)
+data Env a = Env (Step => Streamer a)
+data Model a = Model (Streamer a)
 
 data Msg = Startup | Step
 
-data Streamer state a = Streamer_
+data Streamer a = Streamer_
   { producer :: Stream IO a
+  , consumer :: Stream IO a -> [View]
   , features :: Features
-  , observer :: I.Observer
-  , initial  :: state
-  , consumer :: state -> a -> (state,[View])
+  , children :: [View]
   }
 
-instance Default state => Default (Streamer state a) where
-  def = Streamer_ nil def def def (\st _ -> (st,[]))
+instance Default (Streamer a) where
+  def = Streamer_ nil (const []) def def
 
 deriveLocalComponent ''Streamer
 
 {-# INLINE stream #-}
-stream :: (Typeable state, Typeable a) => (Step => Streamer state a) -> View
-stream s = run (App [Startup] [] [] (Model undef nil) update view) (Env s)
+stream :: Typeable a => (Step => Streamer a) -> View
+stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
   where
-    undef = Streamer_ nil def def (error "undefined state") (\st _ -> (st,[]))
-
-    update Startup (Env streamer) (Model _ _) = 
+    update Startup (Env streamer) _ = 
       let ?step = command Step
       in let s = streamer
-         in pure (Model s (producer s))
+         in pure (Model s)
 
-    update _ _ (Model streamer s) = 
-      Model streamer <$> Stream.step s
+    update _ _ (Model streamer) = do
+      s' <- Stream.step (producer streamer) 
+      pure $ Model streamer { producer = s' }
 
-    view _ (Model Streamer_ {..} s) = 
-      -- Any case in which this shouldn't be a block-level component?
+    view _ (Model Streamer_ {..}) = 
       Div <| SetFeatures features |> 
-        [ (Div <||> List.concat
-            ( Stream.folds (\_ -> []) (\_ _ -> []) 
-              (\a g s -> let (s',vs) = consumer s a in vs : g s') 
-              s initial
-            )
-          )
-        , View observer
-        ]
+        ( Div <||> consumer producer 
+        : children
+        )
+
+-- We can't write `instance (Step => Streamer a)`, so this will have to suffice
+stepper :: Step => I.Observer
+stepper = def & I.Threshold [0] & I.Action (\ts -> when (List.any I.intersecting ts) step)

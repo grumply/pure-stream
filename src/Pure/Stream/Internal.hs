@@ -1,5 +1,5 @@
 {-# language RankNTypes #-}
-module Pure.Stream.Internal (Stream(), unfolds, folds, step, cons, nil, suspended) where
+module Pure.Stream.Internal (Stream(), unfolds, folds, step, cons, nil, suspended, more, done, realized) where
 
 import Data.Foldable
 import Data.Traversable
@@ -40,7 +40,7 @@ builds :: (forall b. b -> (f b -> b) -> (a -> b -> b) -> b) -> Stream f a
 builds f = f End Suspend Segment
 
 {-# INLINE [1] folds #-}
-folds :: Functor f => b -> (f b -> b) -> (a -> b -> b) -> Stream f a -> b
+folds :: Functor f => b -> (f b -> b) -> (element -> b -> b) -> Stream f element -> b
 folds e c s = go
   where
     go End = e
@@ -48,8 +48,8 @@ folds e c s = go
     go (Segment a sa) = s a (go sa)
 
 {-# INLINE unfolds #-}
-unfolds :: Functor f => (state -> f (Maybe (a, state))) -> state -> Stream f a
-unfolds f initial = 
+unfolds :: Functor f => state -> (state -> f (Maybe (element, state))) -> Stream f element
+unfolds initial f = 
   builds $ \e c s ->
     flip fix initial $ \loop st -> 
       let 
@@ -57,6 +57,14 @@ unfolds f initial =
         unwrap Nothing = e
       in 
         c (fmap unwrap (f st))
+
+{-# INLINE more #-}
+more :: Applicative f => element -> state -> f (Maybe (element,state))
+more e s = pure (Just (e,s))
+
+{-# INLINE done #-}
+done :: Applicative f => f (Maybe (element,state))
+done = pure Nothing
 
 {-# RULES
 "folds/builds" forall e c s (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).
@@ -68,3 +76,7 @@ step :: Monad f => Stream f a -> f (Stream f a)
 step (Segment a rest) = Segment a <$> step rest
 step (Suspend fsa) = fsa
 step end = pure end
+
+{-# INLINE realized #-}
+realized :: Functor f => Stream f a -> [a]
+realized = folds [] (const []) (:)
