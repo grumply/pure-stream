@@ -8,6 +8,8 @@ module Pure.Stream
   , unfolds
   , more, done
   , force, stepSize, chunksOf
+  , toList, toListM
+  , fromList, fromListM
   , append, concat
   , repeat, repeatM
   , infinite
