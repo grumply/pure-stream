@@ -1,47 +1,83 @@
-{-# language RankNTypes, ScopedTypeVariables #-}
+{-# language RankNTypes, ScopedTypeVariables, TypeFamilies, InstanceSigs #-}
 module Pure.Stream.Internal 
   ( Stream()
   , unfolds
   , folds
-  , cons, nil, suspended
+  , cons, nil, suspended, singleton
   , more, done
   , step, steps, force
   , stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
+  , append, concat
+  , repeat, repeatM
+  , infinite
+  , take, drop
+  , null
+  , head, headM
+  , headMay, headMayM
+  , tail
+  , reverse
   ) where
 
-import Control.Monad (join,(<$!>))
+import Control.Monad (join,ap)
 import Data.Monoid
 import Data.Semigroup
-import Data.Foldable hiding (toList)
+import Data.Foldable hiding (toList,concat,null,length)
 import Data.Traversable
 import Data.Function (fix)
-import GHC.Exts (build)
+import GHC.Exts (build,IsList())
+import qualified GHC.Exts as List (IsList(..))
+import qualified Data.List as List hiding (length)
+import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length)
 
-data Stream f a = End | Suspend (f (Stream f a)) | Segment a (Stream f a)
+data Stream f a = Nil | Suspended (f (Stream f a)) | Cons a (Stream f a)
 
-{-# INLINE suspended #-}
+{-# INLINE [1] suspended #-}
 suspended :: Functor f => f (Stream f a) -> Stream f a
 suspended stream = builds $ \e c s -> c (fmap (folds e c s) stream)
 
-{-# INLINE cons #-}
+{-# INLINE [1] cons #-}
 cons :: Functor f => a -> Stream f a -> Stream f a
 cons a stream = builds $ \e c s -> s a (folds e c s stream)
 
-{-# INLINE nil #-}
+{-# INLINE [1] nil #-}
 nil :: Stream f a
 nil = builds $ \e c s -> e
 
+{-# INLINE [1] singleton #-}
+singleton :: a -> Stream f a
+singleton a = builds $ \e c s -> s a e
+
 instance Functor f => Monoid (Stream f a) where
+  {-# INLINE mempty #-}
   mempty = nil
+  {-# INLINE mappend #-}
+  mappend = (<>)
+  {-# INLINE mconcat #-}
+  mconcat xs = 
+    builds $ \e c s ->
+      foldr (\a rest -> folds rest c s a) e xs
 
 instance Functor f => Semigroup (Stream f a) where
+  {-# INLINE (<>) #-}
   (<>) = append
 
 instance Functor f => Functor (Stream f) where
   {-# INLINE fmap #-}
   fmap f xs = builds $ \e c s -> folds e c (s . f) xs
+
+instance Functor f => Applicative (Stream f) where
+  {-# INLINE pure #-}
+  pure = return
+  {-# INLINE (<*>) #-}
+  (<*>) = ap
+
+instance Functor f => Monad (Stream f) where
+  {-# INLINE return #-}
+  return a = builds $ \e _ s -> s a e
+  {-# INLINE (>>=) #-}
+  sa >>= asb = concat (fmap asb sa) 
 
 instance (Functor f, Foldable f) => Foldable (Stream f) where
   {-# INLINE foldr #-}
@@ -51,21 +87,32 @@ instance (Functor f, Traversable f) => Traversable (Stream f) where
   {-# INLINE traverse #-}
   traverse f = go
     where
-      go End = pure End
-      go (Suspend fs) = Suspend <$> traverse go fs
-      go (Segment a fs) = Segment <$> f a <*> go fs
+      -- a shame, really, but at least it is possible with this approach
+      -- even if it breaks builds/folds fusion
+      go Nil = pure Nil
+      go (Suspended fs) = Suspended <$> traverse go fs
+      go (Cons a fs) = Cons <$> f a <*> go fs
+
+instance Functor f => IsList (Stream f a) where
+  type Item (Stream f a) = a
+  fromList = fromList
+  toList = toList
+
+{-# INLINE [1] augments #-}
+augments :: (forall b. b -> (f b -> b) -> (a -> b -> b) -> b) -> Stream f a -> Stream f a
+augments f s = f s Suspended Cons
 
 {-# INLINE [1] builds #-}
 builds :: (forall b. b -> (f b -> b) -> (a -> b -> b) -> b) -> Stream f a
-builds f = f End Suspend Segment
+builds f = f Nil Suspended Cons
 
 {-# INLINE [1] folds #-}
 folds :: Functor f => b -> (f b -> b) -> (element -> b -> b) -> Stream f element -> b
 folds e c s = go
   where
-    go End = e
-    go (Suspend fs) = c (fmap go fs)
-    go (Segment a sa) = s a (go sa)
+    go Nil = e
+    go (Suspended fs) = c (fmap go fs)
+    go (Cons a sa) = s a (go sa)
  
 {-# INLINE unfolds #-}
 unfolds :: Functor f => state -> (state -> f (Maybe (element, state))) -> Stream f element
@@ -90,21 +137,34 @@ done = pure Nothing
 "folds/builds" forall e c s (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).
                folds e c s (builds f) = f e c s
 
+"folds/augments" forall e c s xs (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).
+                 folds e c s (augments f xs) = f (folds e c s xs) c s 
+
+"augments/builds" forall (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b) 
+                         (g :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).
+                  augments g (builds f) = builds (\e c s -> g (f e c s) c s)
+
+"folds/cons/builds" forall e c s x (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).
+                    folds e c s (cons x (builds f)) = s x (f e c s)
+
+"folds/singleton"  forall e c s a.  folds e c s (singleton a) = s a e
+"folds/suspended"  forall e c s fa. folds e c s (suspended fa) = c fa
+"folds/nil"        forall e c s.    folds e c s nil = e
   #-}
 
 {-# INLINE step #-}
 step :: Monad f => Stream f a -> f (Stream f a)
 step = go
   where
-    go (Segment a rest) = Segment a <$!> go rest
-    go (Suspend fsa) = fsa
+    go (Cons a rest) = Cons a <$> go rest
+    go (Suspended fsa) = fsa
     go end = pure end
 
 {-# INLINE uncons #-}
 uncons :: Monad f => Stream f a -> f (Maybe (a,Stream f a))
-uncons (Segment a s) = pure (Just (a,s))
-uncons (Suspend f) = f >>= uncons
-uncons End = pure Nothing
+uncons (Cons a s) = pure (Just (a,s))
+uncons (Suspended f) = f >>= uncons
+uncons Nil = pure Nothing
 
 {-# INLINE steps #-}
 steps :: Monad f => Int -> Stream f a -> f (Stream f a)
@@ -167,7 +227,11 @@ chunksOf n stream
         stream 
         n
 
-{-# INLINE append #-}
+{-# RULES
+"append" [~1] forall xs ys. append xs ys = augments (\e c s -> folds e c s xs) ys
+  #-}
+
+{-# NOINLINE [1] append #-}
 append :: Functor f => Stream f a -> Stream f a -> Stream f a
 append l r = builds $ \e c s -> folds (folds e c s r) c s l
 
@@ -175,6 +239,9 @@ append l r = builds $ \e c s -> folds (folds e c s r) c s l
 challenging (impossible?) without using constructors:
 
 interleave :: Functor f => Stream f a -> Stream f a -> Stream f a
+interleave as as' = 
+  -- naive version that drops leftovers, if we had zip
+  -- builds $ \e c s -> folds e c (\(a,a') rest -> s a (s a' rest)) (zip as as')
 -}
 
 {-# INLINE fromList #-}
@@ -184,10 +251,10 @@ fromList xs =
     foldr (\a rest -> s a rest) e xs
 
 {-# INLINE fromListM #-}
-fromListM :: Monad f => [f a] -> Stream f a
+fromListM :: Functor f => [f a] -> Stream f a
 fromListM xs = 
   builds $ \e c s ->
-    foldr (\x rest -> c (x >>= \a -> pure $ s a rest)) e xs
+    foldr (\x rest -> c (fmap (`s` rest) x)) e xs
 
 {-# INLINE toList #-}
 toList :: Functor f => Stream f a -> [a]
@@ -208,3 +275,116 @@ toListM xs =
     (\a c rest -> fmap (a :) (c rest)) 
     xs 
     []
+
+{-# INLINE concat #-}
+concat :: Functor f => Stream f (Stream f a) -> Stream f a
+concat xs = 
+  builds $ \e c s -> 
+    folds e c (\a xs -> folds xs c s a) xs
+
+{-# INLINE infinite #-}
+-- un-delimited
+infinite :: Functor f => a -> Stream f a
+infinite a = 
+  builds $ \_ _ s -> 
+    fix $ \loop -> 
+      s a loop
+
+{-# INLINE repeat #-}
+-- delimited
+repeat :: Applicative f => a -> Stream f a
+repeat a =
+  builds $ \_ c s ->
+    fix $ \loop ->
+      c $ pure $ s a loop
+
+{-# INLINE repeatM #-}
+-- delimited
+repeatM :: Functor f => f a -> Stream f a
+repeatM fa = 
+  builds $ \_ c s ->
+    fix $ \loop ->
+      c (fmap (\a -> s a loop) fa)
+
+{-# INLINE take #-}
+take :: Functor f => Int -> Stream f a -> Stream f a
+take n as | n <= 0 = nil
+take n as =
+  builds $ \e c s ->
+    folds 
+      (const e) 
+      (\f n -> if n <= 0 then e else c (fmap ($ n) f))
+      (\a rest n -> if n <= 0 then e else s a (rest (n - 1))) 
+      as 
+      n
+
+{-# INLINE drop #-}
+drop :: Functor f => Int -> Stream f a -> Stream f a
+drop n as | n <= 0 = as
+drop n as =
+  builds $ \e c s ->
+    folds
+      (const e)
+      (\f n -> c (fmap ($ n) f))
+      (\a rest n -> if n <= 0 then s a (rest n) else rest (n - 1))
+      as
+      n
+
+{-# INLINE null #-}
+null :: Functor f => Stream f a -> Bool
+null = folds True (\_ -> False) (\_ _ -> False)
+
+{-# INLINE head #-}
+head :: Functor f => Stream f a -> a
+head = 
+  folds 
+    (error "Pure.Stream.Internal.head: empty stream")
+    (\_ -> error "Pure.Stream.Internal.head: effectful stream")
+    (\a _ -> a)
+
+{-# INLINE headM #-}
+headM :: Monad f => Stream f a -> f a
+headM = 
+  folds 
+    (error "Pure.Stream.Internal.head: empty stream")
+    join
+    (\a _ -> pure a)
+
+{-# INLINE headMay #-}
+headMay :: Functor f => Stream f a -> Maybe a
+headMay =
+  folds
+    Nothing
+    (const Nothing)
+    (\a _ -> Just a)
+
+{-# INLINE headMayM #-}
+headMayM :: Monad f => Stream f a -> f (Maybe a)
+headMayM =
+  folds
+    (pure Nothing)
+    join
+    (\a _ -> pure (Just a))
+
+{-# INLINE tail #-}
+tail :: Functor f => Stream f a -> Stream f a
+tail xs =
+  builds $ \e c s ->
+    folds
+    (const e)
+    (\f b -> c (fmap ($ b) f))
+    (\a rest b -> if b then s a (rest b) else rest True)
+    xs
+    False
+
+{-# INLINE reverse #-}
+reverse :: Functor f => Stream f a -> Stream f a
+reverse as =
+  builds $ \e c s ->
+    folds
+      id
+      (\f as -> c $ fmap ($ as) f)
+      (\a rest as -> rest (s a as))
+      as
+      e
+

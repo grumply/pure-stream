@@ -10,13 +10,22 @@ module Pure.Stream
   , force, stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
+  , append, concat
+  , repeat, repeatM
+  , infinite
+  , take, drop
+  , null
+  , head, headM
+  , headMay, headMayM
+  , tail
+  , reverse
   ) where
 
 import Pure.Stream.Internal as Stream hiding (step,steps)
 import qualified Pure.Stream.Internal as Stream
 
 import Pure.Data.View (Pure(..))
-import Pure.Elm hiding (Step,step,features,children,force)
+import Pure.Elm hiding (Step,step,features,children,force,reverse,head,drop,infinite,repeat)
 import Pure.Data.Default
 import Pure.Data.Prop.TH
 import qualified Pure.Intersection as I
@@ -24,6 +33,7 @@ import qualified Pure.Intersection as I
 import Control.Monad
 import Data.Typeable
 import qualified Data.List as List
+import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length)
 
 type Step = (?step :: Int -> IO ())
 
