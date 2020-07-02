@@ -1,13 +1,22 @@
 {-# language ImplicitParams, ConstraintKinds, RankNTypes, OverloadedStrings, 
       TemplateHaskell, RecordWildCards, ViewPatterns, PatternSynonyms,
       MultiParamTypeClasses, TypeFamilies, FlexibleContexts #-}
-module Pure.Stream (module Pure.Stream, Stream(), folds, unfolds, more, done, realized) where
+module Pure.Stream 
+  ( module Pure.Stream
+  , Stream()
+  , folds
+  , unfolds
+  , more, done
+  , force, stepSize, chunksOf
+  , toList, toListM
+  , fromList, fromListM
+  ) where
 
-import Pure.Stream.Internal as Stream hiding (step)
+import Pure.Stream.Internal as Stream hiding (step,steps)
 import qualified Pure.Stream.Internal as Stream
 
 import Pure.Data.View (Pure(..))
-import Pure.Elm hiding (Step,step,features,children)
+import Pure.Elm hiding (Step,step,features,children,force)
 import Pure.Data.Default
 import Pure.Data.Prop.TH
 import qualified Pure.Intersection as I
@@ -16,15 +25,18 @@ import Control.Monad
 import Data.Typeable
 import qualified Data.List as List
 
-type Step = (?step :: IO ())
+type Step = (?step :: Int -> IO ())
 
 step :: Step => IO ()
-step = ?step
+step = ?step 1
+
+steps :: Step => Int -> IO ()
+steps = ?step
 
 data Env a = Env (Step => Streamer a)
 data Model a = Model (Streamer a)
 
-data Msg = Startup | Step
+data Msg = Startup | Step Int
 
 data Streamer a = Streamer_
   { producer :: Stream IO a
@@ -43,12 +55,12 @@ stream :: Typeable a => (Step => Streamer a) -> View
 stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
   where
     update Startup (Env streamer) _ = 
-      let ?step = command Step
+      let ?step = command . Step
       in let s = streamer
          in pure (Model s)
 
-    update _ _ (Model streamer) = do
-      s' <- Stream.step (producer streamer) 
+    update (Step n) _ (Model streamer) = do
+      s' <- Stream.steps n (producer streamer) 
       pure $ Model streamer { producer = s' }
 
     view _ (Model Streamer_ {..}) = 
