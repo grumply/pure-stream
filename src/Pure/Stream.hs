@@ -8,17 +8,14 @@ module Pure.Stream
   , unfolds
   , more, done
   , force, stepSize, chunksOf
-  , toList, toListM
-  , fromList, fromListM
   , append, concat
   , repeat, repeatM
   , infinite
   , take, drop
   , null
-  , head, headM
-  , headMay, headMayM
   , tail
   , reverse
+  , filter
   ) where
 
 import Pure.Stream.Internal as Stream hiding (step,steps)
@@ -33,7 +30,7 @@ import qualified Pure.Intersection as I
 import Control.Monad
 import Data.Typeable
 import qualified Data.List as List
-import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length)
+import Prelude hiding (concat,repeat,take,drop,null,tail,reverse,length,filter)
 
 type Step = (?step :: Int -> IO ())
 

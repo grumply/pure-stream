@@ -14,10 +14,9 @@ module Pure.Stream.Internal
   , infinite
   , take, drop
   , null
-  , head, headM
-  , headMay, headMayM
   , tail
   , reverse
+  , filter
   ) where
 
 import Control.Monad (join,ap)
@@ -29,7 +28,7 @@ import Data.Function (fix)
 import GHC.Exts (build,IsList())
 import qualified GHC.Exts as List (IsList(..))
 import qualified Data.List as List hiding (length)
-import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length)
+import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length,filter)
 
 data Stream f a = Nil | Suspended (f (Stream f a)) | Cons a (Stream f a)
 
@@ -334,38 +333,6 @@ drop n as =
 null :: Functor f => Stream f a -> Bool
 null = folds True (\_ -> False) (\_ _ -> False)
 
-{-# INLINE head #-}
-head :: Functor f => Stream f a -> a
-head = 
-  folds 
-    (error "Pure.Stream.Internal.head: empty stream")
-    (\_ -> error "Pure.Stream.Internal.head: effectful stream")
-    (\a _ -> a)
-
-{-# INLINE headM #-}
-headM :: Monad f => Stream f a -> f a
-headM = 
-  folds 
-    (error "Pure.Stream.Internal.head: empty stream")
-    join
-    (\a _ -> pure a)
-
-{-# INLINE headMay #-}
-headMay :: Functor f => Stream f a -> Maybe a
-headMay =
-  folds
-    Nothing
-    (const Nothing)
-    (\a _ -> Just a)
-
-{-# INLINE headMayM #-}
-headMayM :: Monad f => Stream f a -> f (Maybe a)
-headMayM =
-  folds
-    (pure Nothing)
-    join
-    (\a _ -> pure (Just a))
-
 {-# INLINE tail #-}
 tail :: Functor f => Stream f a -> Stream f a
 tail xs =
@@ -388,3 +355,7 @@ reverse as =
       as
       e
 
+{-# INLINE filter #-}
+filter :: Functor f => (a -> Bool) -> Stream f a -> Stream f a
+filter p as = builds $ \e c s -> 
+  folds e c (\a as -> if p a then s a as else as) as
