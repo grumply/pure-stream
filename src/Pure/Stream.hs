@@ -11,7 +11,7 @@ module Pure.Stream
   , suspends, suspendsEvery
   , toList, toListM
   , fromList, fromListM
-  , append, concat
+  , append, concat, merge
   , repeat, repeatM
   , infinite
   , take, drop

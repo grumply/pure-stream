@@ -10,7 +10,7 @@ module Pure.Stream.Internal
   , stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
-  , append, concat
+  , append, concat, merge
   , repeat, repeatM
   , infinite
   , take, drop
@@ -289,6 +289,10 @@ concat :: Functor f => Stream f (Stream f a) -> Stream f a
 concat xs = 
   builds $ \e c s -> 
     folds e c (\a xs -> folds xs c s a) xs
+
+{-# INLINE merge #-}
+merge :: Functor f => Stream f [a] -> Stream f a
+merge = concat . fmap fromList
 
 {-# INLINE infinite #-}
 -- un-delimited
