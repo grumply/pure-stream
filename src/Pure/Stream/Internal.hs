@@ -6,6 +6,7 @@ module Pure.Stream.Internal
   , cons, nil, suspended, singleton
   , more, done
   , step, steps, force
+  , suspends, suspendsEvery
   , stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
@@ -131,6 +132,14 @@ more e s = pure (Just (e,s))
 {-# INLINE done #-}
 done :: Applicative f => f (Maybe (element,state))
 done = pure Nothing
+
+{-# INLINE suspends #-}
+suspends :: Applicative f => Stream f a -> Stream f a
+suspends as = builds $ \e c s -> folds e c (\a as -> c (pure (s a as))) as
+
+{-# INLINE suspendsEvery #-}
+suspendsEvery :: Monad f => Int -> Stream f a -> Stream f a
+suspendsEvery n = chunksOf n . suspends 
 
 {-# RULES
 "folds/builds" forall e c s (f :: forall b. b -> (f b -> b) -> (a -> b -> b) -> b).

@@ -8,6 +8,7 @@ module Pure.Stream
   , unfolds
   , more, done
   , force, stepSize, chunksOf
+  , suspends, suspendsEvery
   , toList, toListM
   , fromList, fromListM
   , append, concat
