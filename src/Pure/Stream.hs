@@ -81,3 +81,9 @@ stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
 -- We can't write `instance (Step => Streamer a)`, so this will have to suffice
 stepper :: Step => I.Observer
 stepper = def & I.Threshold [0] & I.Action (\ts -> when (List.any I.intersecting ts) step)
+
+-- For use in contexts where `RootMargin` does not work, like cross-origin iframes.
+-- See: https://w3c.github.io/IntersectionObserver/#dom-intersectionobserver-rootmargin 
+frameStepper :: Step => Txt -> Streamer a -> Streamer a
+frameStepper offset s = s & Position relative |> 
+  [ stepper <| Position absolute . Bottom 0 . Height offset ]
