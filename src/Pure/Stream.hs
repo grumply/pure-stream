@@ -7,11 +7,13 @@ module Pure.Stream
   , folds
   , unfolds
   , more, done
-  , force, stepSize, chunksOf
+  , force, forceAll
   , suspends, suspendsEvery
+  , stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
-  , append, concat, merge
+  , append, concat
+  , merge
   , repeat, repeatM
   , infinite
   , take, drop

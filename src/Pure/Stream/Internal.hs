@@ -1,16 +1,19 @@
-{-# language RankNTypes, ScopedTypeVariables, TypeFamilies, InstanceSigs #-}
+{-# language RankNTypes, ScopedTypeVariables, TypeFamilies, BangPatterns #-}
 module Pure.Stream.Internal 
   ( Stream()
   , unfolds
   , folds
+  , builds 
   , cons, nil, suspended, singleton
   , more, done
-  , step, steps, force
+  , step, steps
+  , force, forceAll
   , suspends, suspendsEvery
   , stepSize, chunksOf
   , toList, toListM
   , fromList, fromListM
-  , append, concat, merge
+  , append, concat
+  , merge
   , repeat, repeatM
   , infinite
   , take, drop
@@ -26,7 +29,7 @@ import Data.Semigroup
 import Data.Foldable hiding (toList,concat,null,length)
 import Data.Traversable
 import Data.Function (fix)
-import GHC.Exts (build,IsList())
+import GHC.Exts (build,IsList(),inline)
 import qualified GHC.Exts as List (IsList(..))
 import qualified Data.List as List hiding (length)
 import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length,filter)
@@ -57,7 +60,7 @@ instance Functor f => Monoid (Stream f a) where
   {-# INLINE mconcat #-}
   mconcat xs = 
     builds $ \e c s ->
-      foldr (\a rest -> folds rest c s a) e xs
+      foldl' (\rest -> folds rest c s) e xs
 
 instance Functor f => Semigroup (Stream f a) where
   {-# INLINE (<>) #-}
@@ -81,7 +84,7 @@ instance Functor f => Monad (Stream f) where
 
 instance (Functor f, Foldable f) => Foldable (Stream f) where
   {-# INLINE foldr #-}
-  foldr f st = folds st (foldr const undefined) f
+  foldr f st = folds st (foldl' (flip const) undefined) f
 
 instance (Functor f, Traversable f) => Traversable (Stream f) where
   {-# INLINE traverse #-}
@@ -156,8 +159,9 @@ suspendsEvery n = chunksOf n . suspends
                     folds e c s (cons x (builds f)) = s x (f e c s)
 
 "folds/singleton"  forall e c s a.  folds e c s (singleton a) = s a e
-"folds/suspended"  forall e c s fa. folds e c s (suspended fa) = c fa
+"folds/suspended"  forall e c s fa. folds e c s (suspended fa) = c (fmap (folds e c s) fa)
 "folds/nil"        forall e c s.    folds e c s nil = e
+
   #-}
 
 {-# INLINE step #-}
@@ -179,7 +183,11 @@ steps :: Monad f => Int -> Stream f a -> f (Stream f a)
 steps n stream = step $ force n stream
 
 {-# INLINE force #-}
--- force `n` suspended streams
+-- Collect `n` monadic stream effects into a single wrapper that,
+-- when evaluated via `step` or similar, evaluates all of the 
+-- wrapped effects. Subsequent calls to, for instance, `toList` 
+-- will see any elements materialized between those `n` stream 
+-- effects.
 force :: Monad f => Int -> Stream f a -> Stream f a
 force n stream
   | n <= 0    = stream
@@ -188,27 +196,40 @@ force n stream
       folds
         (\_ -> pure e)
         (\fns m ->
-          if m == 0
-            then pure $ c $ join $ fmap ($ 0) fns
-            else join $ fmap ($ (m - 1)) fns
+          let r !n = join $ fmap ($ n) fns
+          in if m == 0
+            then pure (c (r 0))
+            else r (m - 1)
         )
-        (\a stream n -> fmap (s a) $ stream n)
+        (\a stream n -> fmap (s a) (stream n))
         stream
         n
+
+-- Collect all of the monadic stream effects into a single wrapper that, 
+-- when evaluated, forces the entire stream into memory and evaluates all
+-- of the effects. Somewhat subject to fusion, depending on how it is handled.
+-- Subsequent calls to, for instance, `toList`, will see all of the elements of
+-- the stream.
+{-# INLINE forceAll #-}
+forceAll :: Monad f => Stream f a -> Stream f a
+forceAll stream =
+  builds $ \e c s -> 
+    c $ folds (pure e) join (fmap . s) stream
 
 {-# INLINE stepSize #-}
 -- make `step` always force `n` suspended frames; subtly different than chunksOf
 stepSize :: Monad f => Int -> Stream f a -> Stream f a
 stepSize n stream
   | n <= 1    = stream
-  | otherwise = 
+  | otherwise =
     builds $ \e c s -> c $
       folds 
         (\_ -> pure e) 
         (\fns m ->
-          if m == 0
-            then pure $ c $ join $ fmap ($ (n - 1)) fns
-            else join $ fmap ($ (m - 1)) fns 
+          let r !n = join $ fmap ($ n) fns
+          in if m == 0
+            then pure $ c (r (n - 1))
+            else r (m - 1)
         ) 
         (\a stream n -> fmap (s a) $ stream n)
         stream 
@@ -224,12 +245,13 @@ chunksOf n stream
       folds 
         (\_ -> pure e) 
         (\fns m ->
-          if m == 0
-            then pure $ c $ join $ fmap ($ n) fns
-            else join $ fmap ($ m) fns 
+          let r !n = join $ fmap ($ n) fns 
+          in if m == 0
+            then pure $ c (r n)
+            else r m 
         ) 
         (\a stream m -> 
-          let m' | m == 0 = n | otherwise = m - 1
+          let !m' | m == 0 = n | otherwise = m - 1
           in s a <$> stream m'
         )
         stream 
@@ -256,13 +278,13 @@ interleave as as' =
 fromList :: [a] -> Stream f a
 fromList xs = 
   builds $ \e _ s ->
-    foldr (\a rest -> s a rest) e xs
+    foldl' (flip s) e xs
 
 {-# INLINE fromListM #-}
 fromListM :: Functor f => [f a] -> Stream f a
 fromListM xs = 
   builds $ \e c s ->
-    foldr (\x rest -> c (fmap (`s` rest) x)) e xs
+    foldl' (\rest x -> c (fmap (`s` rest) x)) e xs
 
 {-# INLINE toList #-}
 toList :: Functor f => Stream f a -> [a]
@@ -292,7 +314,8 @@ concat xs =
 
 {-# INLINE merge #-}
 merge :: Functor f => Stream f [a] -> Stream f a
-merge = concat . fmap fromList
+merge as = builds $ \e c s -> 
+  folds e c (\as rest -> foldl' (flip s) rest as) as
 
 {-# INLINE infinite #-}
 -- un-delimited
