@@ -15,7 +15,7 @@ module Pure.Stream.Internal
   , append, concat
   , merge
   , repeat, repeatM
-  , infinite
+  , cycle, infinite
   , take, drop
   , null
   , tail
@@ -32,7 +32,7 @@ import Data.Function (fix)
 import GHC.Exts (build,IsList(),inline)
 import qualified GHC.Exts as List (IsList(..))
 import qualified Data.List as List hiding (length)
-import Prelude hiding (concat,repeat,take,drop,null,head,tail,reverse,init,zip,zipWith,length,filter)
+import Prelude hiding (concat,repeat,take,drop,null,tail,reverse,filter,cycle)
 
 data Stream f a = Nil | Suspended (f (Stream f a)) | Cons a (Stream f a)
 
@@ -316,6 +316,13 @@ concat xs =
 merge :: Functor f => Stream f [a] -> Stream f a
 merge as = builds $ \e c s -> 
   folds e c (\as rest -> foldl' (flip s) rest as) as
+
+{-# INLINE cycle #-}
+cycle :: Functor f => Stream f a -> Stream f a
+cycle as = 
+  builds $ \_ c s ->
+    fix $ \loop ->
+      folds loop c s as
 
 {-# INLINE infinite #-}
 -- un-delimited
