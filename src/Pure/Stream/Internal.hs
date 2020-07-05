@@ -278,13 +278,13 @@ interleave as as' =
 fromList :: [a] -> Stream f a
 fromList xs = 
   builds $ \e _ s ->
-    foldl' (flip s) e xs
+    foldr (\a c as -> s a $! c as) id xs e
 
 {-# INLINE fromListM #-}
 fromListM :: Functor f => [f a] -> Stream f a
 fromListM xs = 
   builds $ \e c s ->
-    foldl' (\rest x -> c (fmap (`s` rest) x)) e xs
+    foldr (\fa cont as -> c $! fmap (\a -> s a $! cont as) fa) id xs e
 
 {-# INLINE toList #-}
 toList :: Functor f => Stream f a -> [a]
