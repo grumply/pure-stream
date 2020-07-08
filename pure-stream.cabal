@@ -22,7 +22,6 @@ library
                        pure-core,
                        pure-intersection,
                        pure-default,
-                       pure-elm,
-                       pure-prop
+                       pure-elm
   hs-source-dirs:      src
   default-language:    Haskell2010

@@ -29,7 +29,6 @@ import qualified Pure.Stream.Internal as Stream
 import Pure.Data.View (Pure(..))
 import Pure.Elm hiding (Step,step,features,children,force,reverse,drop,infinite,repeat)
 import Pure.Data.Default
-import Pure.Data.Prop.TH
 import qualified Pure.Intersection as I
 
 import Control.Monad
@@ -50,7 +49,7 @@ data Model a = Model (Streamer a)
 
 data Msg = Startup | Step Int
 
-data Streamer a = Streamer_
+data Streamer a = Streamer
   { producer :: Stream IO a
   , consumer :: Stream IO a -> [View]
   , features :: Features
@@ -58,11 +57,39 @@ data Streamer a = Streamer_
   }
 
 instance Default (Streamer a) where
-  def = Streamer_ nil (const []) def def
+  def = Streamer nil (const []) def def
 
-deriveLocalComponent ''Streamer
+instance HasChildren (Streamer a) where
+  getChildren = children
+  setChildren cs s = s { children = cs }
 
-{-# INLINE stream #-}
+instance HasFeatures (Streamer a) where
+  getFeatures = features
+  setFeatures fs s = s { features = fs }
+
+-- | Note that the view produced from `stream` is nested:
+--
+-- > Div <| SetFeatures features |> 
+-- >   ( Div <||> consumer producer 
+-- >   : children
+-- >   )
+--
+-- If you need to target the nested <div>, use this approach:
+--
+-- > myView = stream (myStream & Themed @MyStreamTheme)
+-- > data MyStreamTheme
+-- > instance Theme MyStreamTheme where
+-- >   theme c = void $ is c $ do
+-- >     apply $ do
+-- >       -- streamRootStyles
+-- >     is firstChild .> do
+-- >       -- streamStyles
+--
+-- This double-div avoids diffing the children unnecessarily.
+--
+-- If your use-case requires a custom shape, it should be relatively
+-- easy to create a custom implementation.
+--
 stream :: Typeable a => (Step => Streamer a) -> View
 stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
   where
@@ -75,11 +102,12 @@ stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
       s' <- Stream.steps n (producer streamer) 
       pure $ Model streamer { producer = s' }
 
-    view _ (Model Streamer_ {..}) = 
+    view _ (Model Streamer {..}) = 
       Div <| SetFeatures features |> 
         ( Div <||> consumer producer 
         : children
         )
+{-# INLINE stream #-}
 
 -- We can't write `instance (Step => Streamer a)`, so this will have to suffice
 stepper :: Step => I.Observer
