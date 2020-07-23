@@ -60,7 +60,7 @@ instance Functor f => Monoid (Stream f a) where
   {-# INLINE mconcat #-}
   mconcat xs = 
     builds $ \e c s ->
-      foldl' (\rest -> folds rest c s) e xs
+      foldr (\as rest -> folds rest c s as) e xs
 
 instance Functor f => Semigroup (Stream f a) where
   {-# INLINE (<>) #-}
@@ -315,7 +315,7 @@ concat xs =
 {-# INLINE merge #-}
 merge :: Functor f => Stream f [a] -> Stream f a
 merge as = builds $ \e c s -> 
-  folds e c (\as rest -> foldl' (flip s) rest as) as
+  folds e c (\as rest -> foldr s rest as) as
 
 {-# INLINE cycle #-}
 cycle :: Functor f => Stream f a -> Stream f a
