@@ -2,7 +2,13 @@
       TemplateHaskell, RecordWildCards, ViewPatterns, PatternSynonyms,
       MultiParamTypeClasses, TypeFamilies, FlexibleContexts #-}
 module Pure.Stream 
-  ( module Pure.Stream
+  ( Step
+  , step
+  , steps
+  , Streamer(..)
+  , stream
+  , stepper
+  , frameStepper
   , Stream()
   , folds
   , unfolds
@@ -27,7 +33,7 @@ import Pure.Stream.Internal as Stream hiding (step,steps)
 import qualified Pure.Stream.Internal as Stream
 
 import Pure.Data.View (Pure(..))
-import Pure.Elm hiding (Step,step,features,children,force,reverse,drop,infinite,repeat)
+import Pure.Elm hiding (Step,step,steps,features,children,force,reverse,drop,infinite,repeat)
 import Pure.Data.Default
 import qualified Pure.Intersection as I
 
