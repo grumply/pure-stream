@@ -97,7 +97,7 @@ instance HasFeatures (Streamer a) where
 -- easy to create a custom implementation.
 --
 stream :: Typeable a => (Step => Streamer a) -> View
-stream s = run (App [Startup] [] [] (Model def) update view) (Env s)
+stream s = run (App [Startup] [] [] (pure (Model def)) update view) (Env s)
   where
     update Startup (Env streamer) _ = 
       let ?step = command . Step
