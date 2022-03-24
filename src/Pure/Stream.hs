@@ -99,6 +99,7 @@ instance HasFeatures (Streamer a) where
 stream :: Typeable a => (Step => Streamer a) -> View
 stream s = run (App [Startup] [] [] (pure (Model def)) update view) (Env s)
   where
+    update :: Elm Msg => Msg -> Env a -> Model a -> IO (Model a)
     update Startup (Env streamer) _ = 
       let ?step = command . Step
       in let s = streamer
